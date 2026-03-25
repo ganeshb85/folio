@@ -284,7 +284,8 @@ function initSupabase() {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: true
+        detectSessionInUrl: true,
+        flowType: 'implicit'
       }
     });
     return true;
@@ -308,8 +309,7 @@ async function signInWithGoogle() {
   const { error } = await sbClient.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: window.location.href,
-      queryParams: { access_type: 'offline', prompt: 'consent' }
+      redirectTo: window.location.href.split('?')[0].split('#')[0]
     }
   });
   if (error) alert('Sign in failed: ' + error.message);
@@ -787,19 +787,24 @@ document.getElementById('signOutOverlay').addEventListener('click', e => {
 const sbReady = initSupabase();
 
 if(sbReady) {
-  // Handle OAuth redirect callback
+  // Listen for auth state changes (covers implicit flow token in hash)
   sbClient.auth.onAuthStateChange(async (event, session) => {
     if(session?.user) {
+      // Clean the hash from URL without reload
+      if(window.location.hash && window.location.hash.includes('access_token')) {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
       showApp(session.user);
-    } else {
+    } else if(event === 'SIGNED_OUT') {
       showAuth();
     }
   });
-  // Check existing session
+  // Check existing session first
   sbClient.auth.getSession().then(({ data: { session } }) => {
     if(session?.user) {
       showApp(session.user);
     } else {
+      // No session — show auth (onAuthStateChange will fire if hash token present)
       showAuth();
     }
   });
