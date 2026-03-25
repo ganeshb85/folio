@@ -1,1 +1,1 @@
-Coeebase to create a simple page for investment portfolio
+Codebase to create a simple page for investment portfolio
