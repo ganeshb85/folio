@@ -20,10 +20,7 @@
   --fb:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',system-ui,sans-serif;
   --fm:'SF Mono','Fira Code','Courier New',monospace;
   --fd:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',system-ui,sans-serif;
-  --fn:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',system-ui,sans-serif;
 }
-.num{font-family:var(--fn);font-variant-numeric:tabular-nums;font-weight:600;letter-spacing:-.02em}
-.num-sm{font-family:var(--fn);font-variant-numeric:tabular-nums;font-weight:500;letter-spacing:-.01em}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--fb);font-size:15px;overflow:hidden;-webkit-font-smoothing:antialiased}
 #app{display:flex;flex-direction:column;height:100vh;height:100dvh;max-width:430px;margin:0 auto}
@@ -75,17 +72,17 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .tot-card{background:var(--bg2);border:none;border-radius:var(--radius);padding:18px 20px;margin-bottom:10px;position:relative;overflow:hidden}
 .tot-card::before{content:'';position:absolute;top:-30px;right:-30px;width:120px;height:120px;border-radius:50%;background:var(--gold-bg);pointer-events:none}
 .tot-label{font-size:12px;color:var(--text2);font-family:var(--fb);letter-spacing:0;margin-bottom:6px}
-.tot-val{font-family:var(--fn);font-variant-numeric:tabular-nums;font-size:38px;font-weight:300;letter-spacing:-.04em;line-height:1;margin-bottom:8px}
+.tot-val{font-family:var(--fd);font-size:38px;font-weight:300;letter-spacing:-.04em;line-height:1;margin-bottom:8px}
 .tot-pnl{display:flex;align-items:center;gap:8px}
-.badge{font-family:var(--fn);font-variant-numeric:tabular-nums;font-size:13px;font-weight:600;padding:3px 10px;border-radius:8px}
+.badge{font-family:var(--fb);font-size:13px;font-weight:500;padding:3px 10px;border-radius:8px}
 .b-pos{background:var(--green-bg);color:var(--green)}
 .b-neg{background:var(--red-bg);color:var(--red)}
 .b-neu{background:var(--bg3);color:var(--text2)}
 .mini-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .mini{background:var(--bg2);border:none;border-radius:var(--radius-sm);padding:12px}
 .mini-lbl{font-size:12px;color:var(--text2);font-family:var(--fb);margin-bottom:5px}
-.mini-val{font-family:var(--fn);font-variant-numeric:tabular-nums;font-size:15px;font-weight:600;letter-spacing:-.02em;margin-bottom:2px}
-.mini-pct{font-size:12px;font-family:var(--fn);font-variant-numeric:tabular-nums;font-weight:600}
+.mini-val{font-size:15px;font-weight:500;letter-spacing:-.01em;margin-bottom:2px}
+.mini-pct{font-size:12px;font-family:var(--fb);font-weight:500}
 
 .tabs{display:flex;padding:0 20px;flex-shrink:0;border-bottom:1px solid var(--border);background:var(--bg)}
 .tab{flex:1;text-align:center;padding:10px 4px;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;font-family:var(--fb)}
@@ -108,7 +105,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .fd-card{background:var(--bg2);border:none;border-radius:var(--radius);padding:14px 16px;margin-bottom:8px;cursor:pointer;transition:background .15s}
 .fd-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
 .fd-row{display:flex;justify-content:space-between;font-size:13px;color:var(--text2);margin-bottom:5px}
-.fd-row span:last-child{color:var(--text);font-family:var(--fn);font-variant-numeric:tabular-nums;font-weight:600;letter-spacing:-.01em}
+.fd-row span:last-child{color:var(--text);font-family:var(--fb);font-weight:500}
 .fd-bar{height:3px;background:var(--bg4);border-radius:2px;margin-top:12px;overflow:hidden}
 .fd-fill{height:100%;background:var(--gold);border-radius:2px}
 .plat-tbl{background:var(--bg2);border:none;border-radius:var(--radius);padding:14px 16px;margin-bottom:8px}
@@ -339,7 +336,7 @@ function initSupabase() {
 // ── State ─────────────────────────────────────────────────────────────────────
 const S = {
   holdings:[], uts:[], fds:[],
-  fx:{usdmyr:4.70, inrmyr:0.0565},
+  fx:{usdmyr:4.70, inrmyr:0.0565, gbpusd:1.29},
   cur:'native', tab:'stocks', mtype:'stock',
   refreshing:false, privacy:false, editId:null
 };
@@ -464,7 +461,8 @@ async function yPrice(t) {
 async function fetchFX() {
   const u = await yPrice('USDMYR=X') || 4.70;
   const i = await yPrice('INRMYR=X') || 0.0565;
-  S.fx = { usdmyr: u, inrmyr: i };
+  const g = await yPrice('GBPUSD=X') || 1.29;
+  S.fx = { usdmyr: u, inrmyr: i, gbpusd: g };
 }
 
 async function refreshPrices() {
@@ -475,9 +473,20 @@ async function refreshPrices() {
   document.getElementById('refBtn').style.opacity = '0.5';
   await fetchFX();
   for (const h of S.holdings) {
-    const yt = h.currency === 'MYR' ? h.ticker + '.KL' : h.ticker;
-    const p = await yPrice(yt);
-    if (p) { h.current_price = p; await sbUpdatePrice(h.id, p); }
+    // Resolve correct Yahoo Finance ticker suffix
+    // MYR stocks -> Bursa (.KL), known LSE ETFs -> London (.L), else US
+    const lseEtfs = ['VWRA','VWRL','VWRD','IWDA','CSPX','EIMI','SWRD','AGGG'];
+    const isLSE = lseEtfs.includes(h.ticker);
+    const yt = h.currency === 'MYR' ? h.ticker + '.KL'
+             : isLSE ? h.ticker + '.L'
+             : h.ticker;
+    const rawP = await yPrice(yt);
+    if (rawP) {
+      // Yahoo returns LSE prices in GBX (pence) — convert to USD: /100 * gbpusd
+      const p = isLSE ? Math.round((rawP / 100) * S.fx.gbpusd * 100) / 100 : rawP;
+      h.current_price = p;
+      await sbUpdatePrice(h.id, p);
+    }
   }
   S.refreshing = false;
   document.getElementById('rdot').style.display = 'inline-block';
@@ -591,8 +600,8 @@ function rStocks() {
         <div class="hcard-top">
           <div><div class="hcard-name">${h.ticker} ${cl}</div><span class="hcard-plat">${h.platform}</span></div>
           <div style="text-align:right">
-            <div style="font-family:var(--fn);font-variant-numeric:tabular-nums;font-size:16px;font-weight:600;letter-spacing:-.02em">${pv(fmt(val,d))}</div>
-            <div style="font-size:13px;font-family:var(--fn);font-variant-numeric:tabular-nums;font-weight:500;color:${col}">${pv(sg+fmt(pnl,d))} ${pv('('+sg+pct.toFixed(1)+'%)')}</div>
+            <div style="font-family:var(--fm);font-size:15px;font-weight:500">${pv(fmt(val,d))}</div>
+            <div style="font-size:12px;font-family:var(--fm);color:${col}">${pv(sg+fmt(pnl,d))} ${pv('('+sg+pct.toFixed(1)+'%)')}</div>
           </div>
         </div>
         <div class="hcard-bot">
@@ -618,12 +627,12 @@ function rUT() {
       <div class="hcard-top">
         <div><div class="hcard-name">${u.name}</div><span class="hcard-plat">${u.platform}</span></div>
         <div style="text-align:right">
-          <div style="font-family:var(--fn);font-variant-numeric:tabular-nums;font-size:16px;font-weight:600;letter-spacing:-.02em">${pv(fmt(val,d))}</div>
-          <div style="font-size:13px;font-family:var(--fn);font-variant-numeric:tabular-nums;font-weight:500;color:${col}">${pv(sg+fmt(pnl,d))} ${pv('('+sg+pct.toFixed(1)+'%)')}</div>
+          <div style="font-family:var(--fm);font-size:15px;font-weight:500">${pv(fmt(val,d))}</div>
+          <div style="font-size:12px;font-family:var(--fm);color:${col}">${pv(sg+fmt(pnl,d))} ${pv('('+sg+pct.toFixed(1)+'%)')}</div>
         </div>
       </div>
       <div class="hcard-bot">
-        <span style="font-size:13px;color:var(--text2);font-family:var(--fn);font-variant-numeric:tabular-nums;font-weight:500">Invested ${pv(fmt(cost,d))}</span>
+        <span class="hcard-units">Invested ${pv(fmt(cost,d))}</span>
         <span style="font-size:12px;color:var(--text2)">Updated ${u.last_updated||'—'}</span>
       </div>
     </div>`;
@@ -646,7 +655,7 @@ function rFD() {
       <div class="fd-top">
         <div><div style="font-size:15px;font-weight:500">${f.bank}</div><span class="hcard-plat">${f.currency}</span></div>
         <div style="text-align:right">
-          <div style="font-family:var(--fn);font-variant-numeric:tabular-nums;font-size:22px;font-weight:600;letter-spacing:-.02em;color:var(--gold)">${f.rate}<span style="font-size:12px;color:var(--text2)">% p.a.</span></div>
+          <div style="font-family:var(--fm);font-size:20px;color:var(--gold)">${f.rate}<span style="font-size:12px;color:var(--text2)">% p.a.</span></div>
           <div style="font-size:11px;color:var(--text2);font-family:var(--fb)">+${fmt(cvt(proj,f.currency,d),d)} projected</div>
         </div>
       </div>
@@ -659,7 +668,7 @@ function rFD() {
   }
   return `<div style="background:var(--gold-bg);border:1px solid rgba(240,192,96,.2);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
     <span style="font-size:12px;color:var(--text2);font-family:var(--fb)">TOTAL LOCKED</span>
-    <span style="font-family:var(--fn);font-variant-numeric:tabular-nums;font-weight:600;letter-spacing:-.02em;color:var(--gold)">${pv(fmt(fmMYR(locked,d),d))}</span>
+    <span style="font-family:var(--fm);font-weight:500;color:var(--gold)">${pv(fmt(fmMYR(locked,d),d))}</span>
   </div>${cards}<div style="text-align:center;padding:8px 0 4px"><button class="add-sm" onclick="openModal('fd')" style="padding:8px 20px">+ Add fixed deposit</button></div>`;
 }
 
@@ -674,8 +683,8 @@ function rSum() {
     const v=fmMYR(dt.v,d), pnl=fmMYR(dt.v-dt.c,d), pct=dt.c>0?(dt.v-dt.c)/dt.c*100:0;
     const sg=pnl>=0?'+':'', col=pnl>=0?'var(--green)':'var(--red)';
     rows+=`<div class="plat-row"><span style="font-size:13px;color:var(--text2)">${p}</span>
-      <div style="text-align:right"><div style="font-family:var(--fn);font-variant-numeric:tabular-nums;font-size:14px;font-weight:600;letter-spacing:-.02em">${pv(fmt(v,d))}</div>
-      <div style="font-size:12px;font-family:var(--fn);font-variant-numeric:tabular-nums;font-weight:500;color:${col}">${pv(sg+fmt(pnl,d))} ${pv('('+sg+pct.toFixed(1)+'%)')}</div></div></div>`;
+      <div style="text-align:right"><div style="font-family:var(--fm);font-size:13px">${pv(fmt(v,d))}</div>
+      <div style="font-size:11px;font-family:var(--fm);color:${col}">${pv(sg+fmt(pnl,d))} ${pv('('+sg+pct.toFixed(1)+'%)')}</div></div></div>`;
   }
   const user = currentUser;
   const email = user?.email || '—';
@@ -686,9 +695,9 @@ function rSum() {
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px">
       <div style="font-size:11px;color:var(--text2);font-family:var(--fb);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Live FX rates</div>
       <div style="display:flex;gap:16px;flex-wrap:wrap">
-        <span style="font-size:12px;font-family:var(--fm)">USD/MYR <span style="font-family:var(--fn);font-variant-numeric:tabular-nums;font-weight:600" class="ca">${S.fx.usdmyr.toFixed(3)}</span></span>
-        <span style="font-size:12px;font-family:var(--fm)">INR/MYR <span style="font-family:var(--fn);font-variant-numeric:tabular-nums;font-weight:600" class="ca">${S.fx.inrmyr.toFixed(4)}</span></span>
-        <span style="font-size:12px;font-family:var(--fm)">USD/INR <span style="font-family:var(--fn);font-variant-numeric:tabular-nums;font-weight:600" class="ca">${(S.fx.usdmyr/S.fx.inrmyr).toFixed(2)}</span></span>
+        <span style="font-size:12px;font-family:var(--fm)">USD/MYR <span class="ca">${S.fx.usdmyr.toFixed(3)}</span></span>
+        <span style="font-size:12px;font-family:var(--fm)">INR/MYR <span class="ca">${S.fx.inrmyr.toFixed(4)}</span></span>
+        <span style="font-size:12px;font-family:var(--fm)">USD/INR <span class="ca">${(S.fx.usdmyr/S.fx.inrmyr).toFixed(2)}</span></span>
       </div>
     </div>
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px">
