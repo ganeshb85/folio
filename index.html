@@ -462,7 +462,23 @@ async function yPrice(t) {
   try {
     const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=1d`);
     const d = await r.json();
-    return d?.chart?.result?.[0]?.meta?.regularMarketPrice || null;
+    const meta = d?.chart?.result?.[0]?.meta;
+    if(!meta) return null;
+    // Use most current price available: premarket > postmarket > regular close
+    const regular = meta.regularMarketPrice;
+    const pre = meta.preMarketPrice;
+    const post = meta.postMarketPrice;
+    const preTime = meta.preMarketTime || 0;
+    const postTime = meta.postMarketTime || 0;
+    const regularTime = meta.regularMarketTime || 0;
+    // Pick the most recently updated price
+    const candidates = [
+      { price: pre,     time: preTime,     label: 'pre'  },
+      { price: post,    time: postTime,    label: 'post' },
+      { price: regular, time: regularTime, label: 'regular' }
+    ].filter(c => c.price && c.price > 0);
+    candidates.sort((a,b) => b.time - a.time);
+    return candidates[0]?.price || null;
   } catch(e) { return null; }
 }
 
