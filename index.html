@@ -460,26 +460,33 @@ function pill(s) {
 // ── FX & Prices ───────────────────────────────────────────────────────────────
 async function yPrice(t) {
   try {
-    const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=1d`);
+    // v7/quote endpoint is more reliable for real-time + pre/post market prices
+    const r = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(t)}&fields=regularMarketPrice,preMarketPrice,postMarketPrice,regularMarketTime,preMarketTime,postMarketTime,marketState`);
     const d = await r.json();
-    const meta = d?.chart?.result?.[0]?.meta;
-    if(!meta) return null;
-    // Use most current price available: premarket > postmarket > regular close
-    const regular = meta.regularMarketPrice;
-    const pre = meta.preMarketPrice;
-    const post = meta.postMarketPrice;
-    const preTime = meta.preMarketTime || 0;
-    const postTime = meta.postMarketTime || 0;
-    const regularTime = meta.regularMarketTime || 0;
-    // Pick the most recently updated price
+    const q = d?.quoteResponse?.result?.[0];
+    if(!q) return null;
+    // marketState tells us which session is active: PRE, REGULAR, POST, CLOSED
+    const state = q.marketState;
+    if(state === 'PRE'  && q.preMarketPrice  > 0) return q.preMarketPrice;
+    if(state === 'POST' && q.postMarketPrice > 0) return q.postMarketPrice;
+    if(state === 'PREPRE' && q.preMarketPrice > 0) return q.preMarketPrice;
+    if(state === 'POSTPOST' && q.postMarketPrice > 0) return q.postMarketPrice;
+    // Fallback: pick most recently timestamped price
     const candidates = [
-      { price: pre,     time: preTime,     label: 'pre'  },
-      { price: post,    time: postTime,    label: 'post' },
-      { price: regular, time: regularTime, label: 'regular' }
-    ].filter(c => c.price && c.price > 0);
+      { price: q.preMarketPrice,  time: q.preMarketTime  || 0 },
+      { price: q.postMarketPrice, time: q.postMarketTime || 0 },
+      { price: q.regularMarketPrice, time: q.regularMarketTime || 0 }
+    ].filter(c => c.price > 0);
     candidates.sort((a,b) => b.time - a.time);
     return candidates[0]?.price || null;
-  } catch(e) { return null; }
+  } catch(e) {
+    // fallback to chart endpoint if quote fails
+    try {
+      const r2 = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=1d`);
+      const d2 = await r2.json();
+      return d2?.chart?.result?.[0]?.meta?.regularMarketPrice || null;
+    } catch(e2) { return null; }
+  }
 }
 
 async function fetchFX() {
