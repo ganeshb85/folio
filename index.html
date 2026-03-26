@@ -198,6 +198,14 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
   .spinner { border-color: var(--border2); border-top-color: var(--accent); }
   .s-ing { background: var(--bg3); color: var(--text2); }
 }
+
+.view-toggle{display:flex;gap:3px;background:var(--bg3);border-radius:8px;padding:3px;margin-bottom:12px}
+.vt-btn{flex:1;text-align:center;padding:5px 8px;font-size:12px;font-weight:500;color:var(--text2);border-radius:6px;cursor:pointer;transition:all .15s;font-family:var(--fb);border:none;background:transparent}
+.vt-btn.active{background:var(--bg);color:var(--text)}
+.multi-badge{font-size:10px;font-weight:600;padding:2px 6px;border-radius:5px;background:var(--accent-bg);color:var(--accent);margin-left:5px;vertical-align:middle}
+.platform-chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+.pchip{font-size:11px;font-weight:500;padding:2px 8px;border-radius:5px;background:var(--bg3);color:var(--text2)}
+.blended-row{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
 </style>
 </head>
 <body>
@@ -585,34 +593,103 @@ function renderContent() {
   else c.innerHTML = rSum();
 }
 
+function setStockView(v) {
+  S.stockView = v;
+  localStorage.setItem('folio_sv', v);
+  document.querySelectorAll('.vt-btn').forEach(b => b.classList.toggle('active', b.dataset.v === v));
+  renderContent();
+}
+
 function rStocks() {
   if(!S.holdings.length) return `<div class="empty"><p style="font-size:32px;margin-bottom:10px">📈</p><p>No stocks yet.<br>Tap + to add your first holding.</p></div>`;
-  const byP = {};
-  for(const h of S.holdings)(byP[h.platform]=byP[h.platform]||[]).push(h);
-  let html = '';
-  for(const [p,arr] of Object.entries(byP)) {
-    html += `<div class="sec-hdr"><span class="sec-lbl">${p}</span><button class="add-sm" onclick="openModal('stock','${p}')">+ Add</button></div>`;
-    for(const h of arr) {
-      const d=dc(h.currency), val=cvt(hV(h),h.currency,d), pnl=cvt(hPnL(h),h.currency,d), pct=hPct(h);
-      const sg=pnl>=0?'+':'', col=pnl>=0?'var(--green)':'var(--red)';
-      const cl=d!==h.currency?`<span style="font-size:12px;color:var(--text2)">(→${d})</span>`:'';
-      html += `<div class="hcard" onclick="openEdit('stock','${h.id}')" oncontextmenu="delItem(event,'stock','${h.id}')">
+
+  const toggle = `<div class="view-toggle">
+    <button class="vt-btn ${S.stockView==='platform'?'active':''}" data-v="platform" onclick="setStockView('platform')">By platform</button>
+    <button class="vt-btn ${S.stockView==='ticker'?'active':''}" data-v="ticker" onclick="setStockView('ticker')">By ticker</button>
+  </div>`;
+
+  let html = toggle;
+
+  if(S.stockView === 'platform') {
+    // ── Platform view (existing behaviour) ───────────────────────────────────
+    const byP = {};
+    for(const h of S.holdings)(byP[h.platform]=byP[h.platform]||[]).push(h);
+    for(const [p,arr] of Object.entries(byP)) {
+      html += `<div class="sec-hdr"><span class="sec-lbl">${p}</span><button class="add-sm" onclick="openModal('stock','${p}')">+ Add</button></div>`;
+      for(const h of arr) {
+        const d=dc(h.currency), val=cvt(hV(h),h.currency,d), pnl=cvt(hPnL(h),h.currency,d), pct=hPct(h);
+        const sg=pnl>=0?'+':'', col=pnl>=0?'var(--green)':'var(--red)';
+        const cl=d!==h.currency?`<span style="font-size:12px;color:var(--text2)">(→${d})</span>`:'';
+        html += `<div class="hcard" onclick="openEdit('stock','${h.id}')" oncontextmenu="delItem(event,'stock','${h.id}')">
+          <div class="hcard-top">
+            <div><div class="hcard-name">${h.ticker} ${cl}</div><span class="hcard-plat">${h.platform}</span></div>
+            <div style="text-align:right">
+              <div style="font-family:var(--fn);font-variant-numeric:tabular-nums;font-size:16px;font-weight:600;letter-spacing:-.02em">${pv(fmt(val,d))}</div>
+              <div style="font-size:13px;font-family:var(--fn);font-variant-numeric:tabular-nums;font-weight:500;color:${col}">${pv(sg+fmt(pnl,d))} ${pv('('+sg+pct.toFixed(1)+'%)')}</div>
+            </div>
+          </div>
+          <div class="hcard-bot">
+            <span class="hcard-units">${h.qty} units · avg ${fmt(h.avg_cost,h.currency)}</span>
+            <span style="font-size:13px;color:var(--text2);font-family:var(--fn);font-variant-numeric:tabular-nums;font-weight:500">now ${fmt(h.current_price,h.currency)}</span>
+          </div>
+        </div>`;
+      }
+    }
+  } else {
+    // ── Ticker view — consolidated across platforms ───────────────────────────
+    const byT = {};
+    for(const h of S.holdings) {
+      if(!byT[h.ticker]) byT[h.ticker] = [];
+      byT[h.ticker].push(h);
+    }
+    // Sort: multi-platform first, then alphabetical
+    const sorted = Object.entries(byT).sort((a,b) => {
+      if(b[1].length !== a[1].length) return b[1].length - a[1].length;
+      return a[0].localeCompare(b[0]);
+    });
+    for(const [ticker, positions] of sorted) {
+      const isMulti = positions.length > 1;
+      // Blended calculations — all in native USD (or MYR)
+      const currency = positions[0].currency;
+      const dispCur = dc(currency);
+      const totalQty = positions.reduce((s,h) => s+h.qty, 0);
+      const totalCost = positions.reduce((s,h) => s+hC(h), 0);
+      const totalVal = positions.reduce((s,h) => s+hV(h), 0);
+      const blendedAvg = totalCost / totalQty;
+      const totalPnL = totalVal - totalCost;
+      const totalPct = totalCost > 0 ? totalPnL/totalCost*100 : 0;
+      const dispVal = cvt(totalVal, currency, dispCur);
+      const dispPnL = cvt(totalPnL, currency, dispCur);
+      const sg = dispPnL>=0?'+':'', col = dispPnL>=0?'var(--green)':'var(--red)';
+      const curLabel = dispCur!==currency?`<span style="font-size:12px;color:var(--text2)">(→${dispCur})</span>`:'';
+
+      // Platform chips
+      const chips = positions.map(h =>
+        `<span class="pchip">${h.platform} · ${h.qty}u @ ${fmt(h.avg_cost, h.currency)}</span>`
+      ).join('');
+
+      html += `<div class="hcard" oncontextmenu="event.preventDefault()">
         <div class="hcard-top">
-          <div><div class="hcard-name">${h.ticker} ${cl}</div><span class="hcard-plat">${h.platform}</span></div>
+          <div>
+            <div class="hcard-name">${ticker} ${curLabel}${isMulti?`<span class="multi-badge">2 platforms</span>`:''}</div>
+            <div style="font-size:13px;color:var(--text2);margin-top:2px">${totalQty.toFixed(4).replace(/\.?0+$/,'')} units total</div>
+          </div>
           <div style="text-align:right">
-            <div style="font-family:var(--fm);font-size:15px;font-weight:500">${pv(fmt(val,d))}</div>
-            <div style="font-size:12px;font-family:var(--fm);color:${col}">${pv(sg+fmt(pnl,d))} ${pv('('+sg+pct.toFixed(1)+'%)')}</div>
+            <div style="font-family:var(--fn);font-variant-numeric:tabular-nums;font-size:16px;font-weight:600;letter-spacing:-.02em">${pv(fmt(dispVal,dispCur))}</div>
+            <div style="font-size:13px;font-family:var(--fn);font-variant-numeric:tabular-nums;font-weight:500;color:${col}">${pv(sg+fmt(dispPnL,dispCur))} ${pv('('+sg+totalPct.toFixed(1)+'%)')}</div>
           </div>
         </div>
-        <div class="hcard-bot">
-          <span class="hcard-units">${h.qty} units · avg ${fmt(h.avg_cost,h.currency)}</span>
-          <span style="font-size:11px;color:var(--text2);font-family:var(--fb)">now ${fmt(h.current_price,h.currency)}</span>
-        </div>
+        <div class="platform-chips">${chips}</div>
+        ${isMulti ? `<div class="blended-row">
+          <span style="font-size:13px;color:var(--text2)">Blended avg cost</span>
+          <span style="font-family:var(--fn);font-variant-numeric:tabular-nums;font-size:14px;font-weight:600">${fmt(blendedAvg, currency)}</span>
+        </div>` : ''}
       </div>`;
     }
   }
-  html += `<div style="text-align:center;padding:8px 0 4px"><button class="add-sm" onclick="openModal('stock')" style="padding:8px 20px">+ Add stock / ETF</button></div>
-  <div style="text-align:center;font-size:12px;color:var(--text2);padding:4px 0 8px;font-family:var(--fm)">tap card to edit · hold to delete</div>`;
+
+  html += `<div style="text-align:center;padding:10px 0 4px"><button class="add-sm" onclick="openModal('stock')" style="padding:8px 20px">+ Add stock / ETF</button></div>
+  <div style="text-align:center;font-size:12px;color:var(--text2);padding:4px 0 8px;font-family:var(--fb)">${S.stockView==='platform'?'tap to edit · hold to delete':'multi-platform stocks shown first'}</div>`;
   return html;
 }
 
