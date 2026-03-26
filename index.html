@@ -199,9 +199,9 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
   .s-ing { background: var(--bg3); color: var(--text2); }
 }
 
-.view-toggle{display:flex;gap:3px;background:var(--bg3);border-radius:8px;padding:3px;margin-bottom:12px}
-.vt-btn{flex:1;text-align:center;padding:5px 8px;font-size:12px;font-weight:500;color:var(--text2);border-radius:6px;cursor:pointer;transition:all .15s;font-family:var(--fb);border:none;background:transparent}
-.vt-btn.active{background:var(--bg);color:var(--text)}
+.view-toggle{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:12px}
+.vt-btn{padding:8px 16px;font-size:13px;font-weight:500;color:var(--text2);border:none;border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;transition:all .15s;font-family:var(--fb);background:transparent}
+.vt-btn.active{color:var(--text);border-bottom-color:var(--text)}
 .multi-badge{font-size:10px;font-weight:600;padding:2px 6px;border-radius:5px;background:var(--accent-bg);color:var(--accent);margin-left:5px;vertical-align:middle}
 .platform-chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
 .pchip{font-size:11px;font-weight:500;padding:2px 8px;border-radius:5px;background:var(--bg3);color:var(--text2)}
@@ -460,33 +460,18 @@ function pill(s) {
 // ── FX & Prices ───────────────────────────────────────────────────────────────
 async function yPrice(t) {
   try {
-    // v7/quote endpoint is more reliable for real-time + pre/post market prices
-    const r = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(t)}&fields=regularMarketPrice,preMarketPrice,postMarketPrice,regularMarketTime,preMarketTime,postMarketTime,marketState`);
+    const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=1d&includePrePost=true`);
     const d = await r.json();
-    const q = d?.quoteResponse?.result?.[0];
-    if(!q) return null;
-    // marketState tells us which session is active: PRE, REGULAR, POST, CLOSED
-    const state = q.marketState;
-    if(state === 'PRE'  && q.preMarketPrice  > 0) return q.preMarketPrice;
-    if(state === 'POST' && q.postMarketPrice > 0) return q.postMarketPrice;
-    if(state === 'PREPRE' && q.preMarketPrice > 0) return q.preMarketPrice;
-    if(state === 'POSTPOST' && q.postMarketPrice > 0) return q.postMarketPrice;
-    // Fallback: pick most recently timestamped price
-    const candidates = [
-      { price: q.preMarketPrice,  time: q.preMarketTime  || 0 },
-      { price: q.postMarketPrice, time: q.postMarketTime || 0 },
-      { price: q.regularMarketPrice, time: q.regularMarketTime || 0 }
-    ].filter(c => c.price > 0);
-    candidates.sort((a,b) => b.time - a.time);
-    return candidates[0]?.price || null;
-  } catch(e) {
-    // fallback to chart endpoint if quote fails
-    try {
-      const r2 = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=1d`);
-      const d2 = await r2.json();
-      return d2?.chart?.result?.[0]?.meta?.regularMarketPrice || null;
-    } catch(e2) { return null; }
-  }
+    const meta = d?.chart?.result?.[0]?.meta;
+    if(!meta) return null;
+    const state = meta.marketState || '';
+    const pre  = meta.preMarketPrice  || 0;
+    const post = meta.postMarketPrice || 0;
+    const reg  = meta.regularMarketPrice || 0;
+    if((state === 'PRE' || state === 'PREPRE') && pre > 0)     return pre;
+    if((state === 'POST' || state === 'POSTPOST') && post > 0) return post;
+    return reg || null;
+  } catch(e) { return null; }
 }
 
 async function fetchFX() {
@@ -695,6 +680,7 @@ function rStocks() {
         `<span class="pchip">${h.platform} · ${h.qty}u @ ${fmt(h.avg_cost, h.currency)}</span>`
       ).join('');
 
+      const currentPrice = positions[0].current_price;
       html += `<div class="hcard" oncontextmenu="event.preventDefault()">
         <div class="hcard-top">
           <div>
@@ -707,10 +693,10 @@ function rStocks() {
           </div>
         </div>
         <div class="platform-chips">${chips}</div>
-        ${isMulti ? `<div class="blended-row">
-          <span style="font-size:13px;color:var(--text2)">Blended avg cost</span>
-          <span style="font-family:var(--fn);font-variant-numeric:tabular-nums;font-size:14px;font-weight:600">${fmt(blendedAvg, currency)}</span>
-        </div>` : ''}
+        <div class="blended-row">
+          ${isMulti ? `<span style="font-size:13px;color:var(--text2)">Blended avg <span style="font-family:var(--fn);font-variant-numeric:tabular-nums;font-weight:600;color:var(--text)">${fmt(blendedAvg,currency)}</span></span>` : `<span style="font-size:13px;color:var(--text2)">${positions[0].platform}</span>`}
+          <span style="font-size:13px;color:var(--text2);font-family:var(--fn);font-variant-numeric:tabular-nums;font-weight:500">now ${fmt(currentPrice,currency)}</span>
+        </div>
       </div>`;
     }
   }
