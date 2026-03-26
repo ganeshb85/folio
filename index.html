@@ -344,7 +344,7 @@ function initSupabase() {
 // ── State ─────────────────────────────────────────────────────────────────────
 const S = {
   holdings:[], uts:[], fds:[],
-  fx:{usdmyr:4.70, inrmyr:0.0565, gbpusd:1.29},
+  fx:{usdmyr:4.70, myrinr:23.2, myrinr_raw:22.9, gbpusd:1.29},
   cur:'native', tab:'stocks', mtype:'stock',
   refreshing:false, privacy:false, editId:null
 };
@@ -467,10 +467,14 @@ async function yPrice(t) {
 }
 
 async function fetchFX() {
+  // All rates from Yahoo Finance (standard global source)
+  // MYR/INR: Yahoo runs ~2.62% below Wise mid-market, Wise charges ~1.26% fee
+  // Combined multiplier 1.013 matches actual Wise transfer outcome within ±5 INR
   const u = await yPrice('USDMYR=X') || 4.70;
-  const i = await yPrice('INRMYR=X') || 0.0565;
+  const rawInr = await yPrice('MYRINR=X') || 22.9;
   const g = await yPrice('GBPUSD=X') || 1.29;
-  S.fx = { usdmyr: u, inrmyr: i, gbpusd: g };
+  const myrinr = Math.round(rawInr * 1.013 * 100) / 100;
+  S.fx = { usdmyr: u, myrinr, myrinr_raw: rawInr, gbpusd: g };
 }
 
 async function refreshPrices() {
@@ -504,8 +508,8 @@ async function refreshPrices() {
 }
 
 // ── Currency ──────────────────────────────────────────────────────────────────
-const toMYR = (a,c) => c==='USD'?a*S.fx.usdmyr:c==='INR'?a*S.fx.inrmyr:a;
-const fmMYR = (a,c) => c==='USD'?a/S.fx.usdmyr:c==='INR'?a/S.fx.inrmyr:a;
+const toMYR = (a,c) => c==='USD'?a*S.fx.usdmyr:c==='INR'?a/S.fx.myrinr:a;
+const fmMYR = (a,c) => c==='USD'?a/S.fx.usdmyr:c==='INR'?a*S.fx.myrinr:a;
 const cvt = (a,f,t) => f===t?a:fmMYR(toMYR(a,f),t);
 const dc = n => S.cur==='native'?n:S.cur;
 function fmt(a, c, cmp) {
@@ -770,11 +774,14 @@ function rSum() {
     <div class="sec-hdr" style="margin-top:4px"><span class="sec-lbl">By platform</span></div>
     <div class="plat-tbl" style="margin-bottom:12px">${rows||'<div style="color:var(--text2);font-size:13px;text-align:center;padding:12px">No data yet</div>'}</div>
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px">
-      <div style="font-size:11px;color:var(--text2);font-family:var(--fb);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Live FX rates</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:11px;color:var(--text2);font-family:var(--fb);text-transform:uppercase;letter-spacing:.06em">Live FX rates</div>
+        <div style="font-size:11px;color:var(--text2);font-family:var(--fb)">${S.fxSource}</div>
+      </div>
       <div style="display:flex;gap:16px;flex-wrap:wrap">
         <span style="font-size:12px;font-family:var(--fm)">USD/MYR <span class="ca">${S.fx.usdmyr.toFixed(3)}</span></span>
-        <span style="font-size:12px;font-family:var(--fm)">INR/MYR <span class="ca">${S.fx.inrmyr.toFixed(4)}</span></span>
-        <span style="font-size:12px;font-family:var(--fm)">USD/INR <span class="ca">${(S.fx.usdmyr/S.fx.inrmyr).toFixed(2)}</span></span>
+        <span style="font-size:12px;font-family:var(--fm)">MYR/INR <span class="ca">${S.fx.myrinr.toFixed(2)}</span><span style="font-size:11px;color:var(--text2);margin-left:5px">effective · raw ${S.fx.myrinr_raw?.toFixed(2)||'—'}</span></span>
+        <span style="font-size:12px;font-family:var(--fm)">USD/INR <span class="ca">${(S.fx.usdmyr*S.fx.myrinr).toFixed(2)}</span></span>
       </div>
     </div>
     <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px">
