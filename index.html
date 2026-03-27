@@ -460,17 +460,14 @@ function pill(s) {
 // ── FX & Prices ───────────────────────────────────────────────────────────────
 async function yPrice(t) {
   try {
-    const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=1d&includePrePost=true`);
+    // Route through Supabase Edge Function to avoid Yahoo CORS block
+    const base = localStorage.getItem('sb_url');
+    if(!base) return null;
+    const r = await fetch(`${base}/functions/v1/yahoo-proxy?ticker=${encodeURIComponent(t)}`, {
+      headers: { 'Authorization': 'Bearer ' + localStorage.getItem('sb_key') }
+    });
     const d = await r.json();
-    const meta = d?.chart?.result?.[0]?.meta;
-    if(!meta) return null;
-    const state = meta.marketState || '';
-    const pre  = meta.preMarketPrice  || 0;
-    const post = meta.postMarketPrice || 0;
-    const reg  = meta.regularMarketPrice || 0;
-    if((state === 'PRE' || state === 'PREPRE') && pre > 0)     return pre;
-    if((state === 'POST' || state === 'POSTPOST') && post > 0) return post;
-    return reg || null;
+    return d?.price || null;
   } catch(e) { return null; }
 }
 
