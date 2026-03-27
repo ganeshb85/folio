@@ -463,7 +463,7 @@ async function yPrice(t) {
     // Route through Supabase Edge Function to avoid Yahoo CORS block
     const base = localStorage.getItem('sb_url');
     if(!base) return null;
-    const r = await fetch(`${base}/functions/v1/yahoo-proxy?ticker=${encodeURIComponent(t)}`, {
+    const r = await fetch(`${base}/functions/v1/Yahoo-proxy?ticker=${encodeURIComponent(t)}`, {
       headers: { 'Authorization': 'Bearer ' + localStorage.getItem('sb_key') }
     });
     const d = await r.json();
