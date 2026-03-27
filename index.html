@@ -344,7 +344,7 @@ function initSupabase() {
 // ── State ─────────────────────────────────────────────────────────────────────
 const S = {
   holdings:[], uts:[], fds:[],
-  fx:{usdmyr:4.70, myrinr:23.2, myrinr_raw:22.9, gbpusd:1.29},
+  fx:{usdmyr:4.70, myrinr:23.2, myrinr_raw:22.9},
   cur:'native', tab:'stocks', mtype:'stock',
   refreshing:false, privacy:false, editId:null
 };
@@ -459,15 +459,24 @@ function pill(s) {
 
 // ── FX & Prices ───────────────────────────────────────────────────────────────
 async function yPrice(t) {
+  // Try Supabase proxy first (fixes CORS for pre/post market)
+  const base = localStorage.getItem('sb_url');
+  if(base) {
+    try {
+      const r = await fetch(`${base}/functions/v1/yahoo-proxy?ticker=${encodeURIComponent(t)}`, {
+        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('sb_key') }
+      });
+      if(r.ok) {
+        const d = await r.json();
+        if(d?.price > 0) return d.price;
+      }
+    } catch(e) {}
+  }
+  // Fallback: direct Yahoo call (works for regular session, blocked for pre/post)
   try {
-    // Route through Supabase Edge Function to avoid Yahoo CORS block
-    const base = localStorage.getItem('sb_url');
-    if(!base) return null;
-    const r = await fetch(`${base}/functions/v1/Yahoo-proxy?ticker=${encodeURIComponent(t)}`, {
-      headers: { 'Authorization': 'Bearer ' + localStorage.getItem('sb_key') }
-    });
+    const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?interval=1d&range=1d`);
     const d = await r.json();
-    return d?.price || null;
+    return d?.chart?.result?.[0]?.meta?.regularMarketPrice || null;
   } catch(e) { return null; }
 }
 
@@ -477,9 +486,8 @@ async function fetchFX() {
   // Combined multiplier 1.013 matches actual Wise transfer outcome within ±5 INR
   const u = await yPrice('USDMYR=X') || 4.70;
   const rawInr = await yPrice('MYRINR=X') || 22.9;
-  const g = await yPrice('GBPUSD=X') || 1.29;
   const myrinr = Math.round(rawInr * 1.013 * 100) / 100;
-  S.fx = { usdmyr: u, myrinr, myrinr_raw: rawInr, gbpusd: g };
+  S.fx = { usdmyr: u, myrinr, myrinr_raw: rawInr };
 }
 
 async function refreshPrices() {
@@ -497,10 +505,10 @@ async function refreshPrices() {
     const yt = h.currency === 'MYR' ? h.ticker + '.KL'
              : isLSE ? h.ticker + '.L'
              : h.ticker;
-    const rawP = await yPrice(yt);
-    if (rawP) {
-      // Yahoo returns LSE prices in GBX (pence) — convert to USD: /100 * gbpusd
-      const p = isLSE ? Math.round((rawP / 100) * S.fx.gbpusd * 100) / 100 : rawP;
+    const p = await yPrice(yt);
+    // Yahoo quotes VWRA.L and other USD-denominated LSE ETFs directly in USD
+    // No GBX conversion needed — Yahoo handles it
+    if(p > 0) {
       h.current_price = p;
       await sbUpdatePrice(h.id, p);
     }
